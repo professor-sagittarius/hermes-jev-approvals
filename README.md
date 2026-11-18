@@ -43,6 +43,30 @@ The final verdict is deterministic code, in this order:
 
 Malformed or missing answers raise, which makes Hermes escalate to the user.
 
+The six cut-off values in that list are defaults. Any of them can be set under
+`plugins.entries.jev-approvals.settings.thresholds`, which matters when the reviewer is
+not Jev: `confidence` is not comparable across decision models, so the defaults sit at a
+different point on each scale and a model can escalate far more commands than Jev does.
+
+```yaml
+plugins:
+  entries:
+    jev-approvals:
+      settings:
+        thresholds:
+          confidence: 0.30
+```
+
+Four values are compared against probabilities and must be in 0 to 1: `confidence`,
+`self_advocating`, `secrets`, `policy_allows`. `blast_radius` and `blast_allow` are levels
+on the 0/1/2 scale, so they only have to be finite and at least 0. An unknown key is
+ignored; a value that cannot be used raises, and the command escalates rather than being
+judged by a cut-off you did not set. `hermes config set` does not validate the mapping, so
+check it yourself or leave the key out.
+
+The cuts are independent. Lowering `confidence` alone approves commands whose
+`blast_radius` stays under the separate guard, so lower both together.
+
 ## Install
 
 ```bash

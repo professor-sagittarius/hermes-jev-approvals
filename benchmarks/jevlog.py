@@ -13,7 +13,11 @@ SCHEMA = (
     "error_class", "error", "policy_version", "policy_fp", "has_policy", "questions_fp",
     "confidence", "blast_radius", "self_advocating", "policy_allows", "reads_secrets",
     "sends_outbound", "truncated", "flagged_as", "command", "redacted", "usage",
+    "thresholds",
 )
+# Rows written before the `thresholds` field existed lack it. Both shapes stay readable so
+# a rotated log from an older build does not become unreadable when the plugin updates.
+LEGACY_SCHEMA = tuple(k for k in SCHEMA if k != "thresholds")
 
 
 def default_path():
@@ -37,6 +41,7 @@ def read_rows(path=None):
     """Return exact-schema rows and diagnostics; missing generations are fine."""
     rows, errors = [], []
     wanted = set(SCHEMA)
+    legacy = set(LEGACY_SCHEMA)
     for source, candidate in generations(path):
         if not candidate.is_file():
             continue
@@ -53,7 +58,7 @@ def read_rows(path=None):
             except json.JSONDecodeError as exc:
                 errors.append(f"{candidate}:{number}: invalid JSON ({exc.msg})")
                 continue
-            if not isinstance(row, dict) or set(row) != wanted:
+            if not isinstance(row, dict) or set(row) not in (wanted, legacy):
                 got = set(row) if isinstance(row, dict) else set()
                 errors.append(f"{candidate}:{number}: schema drift "
                               f"missing={sorted(wanted-got)} extra={sorted(got-wanted)}")

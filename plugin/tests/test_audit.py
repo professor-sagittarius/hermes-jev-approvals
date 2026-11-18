@@ -9,7 +9,7 @@ The contract this file pins (plugin/__init__.py, PR2):
     (`_audit_row`): ts ok verdict raw_verdict rule reason model model_requested provider
     route latency_ms attempts http_status request_id error_class error policy_version
     policy_fp questions_fp has_policy confidence blast_radius self_advocating policy_allows
-    reads_secrets sends_outbound truncated flagged_as command redacted usage
+    reads_secrets sends_outbound thresholds truncated flagged_as command redacted usage
   * `ok` is the outcome; `raw_verdict` is the model's pick before policy, `verdict` after;
     `rule` is a stable id for the branch that fired — grouping must never mean grep-ing
     `reason` prose.
