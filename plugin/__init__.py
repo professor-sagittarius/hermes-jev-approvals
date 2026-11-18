@@ -837,6 +837,9 @@ def _error_class(exc: BaseException) -> str:
         return "stream_unsupported"
     if "only serves the smart-approval" in text:
         return "not_approval_request"
+    if text.startswith(f"{PROVIDER_NAME}: thresholds"):
+        # An operator's config, not the model's answer: keep the two attributable in the log.
+        return "bad_threshold"
     if "base_url" in text or "redirect" in text:
         return "invalid_endpoint"
     if any(part in text for part in (
@@ -858,6 +861,9 @@ def _audit_row(*, route: str = "", model_requested: str = "") -> Dict[str, Any]:
         "has_policy": False, "questions_fp": _QUESTIONS_FP,
         "confidence": None, "blast_radius": None, "self_advocating": None,
         "policy_allows": None, "reads_secrets": None, "sends_outbound": None,
+        # The thresholds the rule chain actually used, so a past decision stays explainable
+        # after an operator edits settings. Defaults normally; a sub-dict of the six keys.
+        "thresholds": None,
         "truncated": False, "flagged_as": None, "command": None,
         "redacted": False, "usage": None,
     }
@@ -997,11 +1003,17 @@ class JevClient:
 
             # The rule chain is `jev_policy.apply_policy` (pure, golden-tested; loaded at the
             # top of this file). Order and thresholds there are versioned by _POLICY_VERSION.
+            # Thresholds are resolved per decision from config so a model with a different
+            # calibration does not get judged by Jev's scale. This raises on a malformed
+            # value; the exception propagates and core escalates rather than guessing.
+            effective_thresholds = _policy.Thresholds.from_mapping(
+                _setting("thresholds", None))
             verdict, rule, reason = _policy.apply_policy(
                 verdict=verdict, confidence=confidence, blast_radius=blast,
                 self_advocating=advocating, policy_allows=policy_ok,
                 reads_secrets=reads_secrets, sends_outbound=sends_outbound,
-                has_policy=bool(policy), truncated=truncated)
+                has_policy=bool(policy), truncated=truncated,
+                thresholds=effective_thresholds)
 
             usage = data.get("usage", {})
             logger.info("%s %s [%s] (conf %.2f, blast %.2f, advocating %.2f, "
@@ -1014,6 +1026,7 @@ class JevClient:
                        blast_radius=blast, self_advocating=advocating,
                        policy_allows=policy_ok, reads_secrets=reads_secrets,
                        sends_outbound=sends_outbound, usage=usage,
+                       thresholds=effective_thresholds._asdict(),
                        latency_ms=int((time.monotonic() - started) * 1000))
             _record(row)
             return _Completion(verdict, data.get("model", model_id),

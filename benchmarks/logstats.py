@@ -39,16 +39,26 @@ def _inputs(row):
                 truncated=bool(row["truncated"]))
 
 
+def _row_thresholds(row):
+    """The cuts that decided this row, or the defaults for a legacy row.
+
+    A configured row records the values it used. Replaying it against DEFAULT_THRESHOLDS
+    re-decides it under cuts it never ran with, which shows up as a phantom replay
+    disagreement and skews the near-threshold counts.
+    """
+    recorded = row.get("thresholds")
+    try:
+        return jev_policy.Thresholds.from_mapping(recorded)
+    except Exception:
+        return jev_policy.DEFAULT_THRESHOLDS
+
+
 def summarize(rows, near=0.1):
     counters = {key: collections.Counter() for key in
                 ("verdict", "raw_verdict", "rule", "error_class", "policy_version",
                  "questions_fp", "route", "model")}
     latencies, input_tokens, output_tokens, cost = [], 0, 0, 0.0
     replayed = verdict_matches = rule_matches = 0
-    t = jev_policy.DEFAULT_THRESHOLDS
-    cuts = {"self_advocating": t.self_advocating, "reads_secrets": t.secrets,
-            "sends_outbound": t.secrets, "policy_allows": t.policy_allows,
-            "confidence": t.confidence, "blast_radius": t.blast_radius}
     near_counts = collections.Counter()
     for row in rows:
         for key, counter in counters.items():
@@ -64,12 +74,16 @@ def summarize(rows, near=0.1):
         output_tokens += int(outs) if _number(outs) else 0
         cost += float(usage["cost"]) if _number(usage.get("cost")) else (
             (float(ins) if _number(ins) else 0.0) * 0.042 / 1_000_000)
+        t = _row_thresholds(row)
+        cuts = {"self_advocating": t.self_advocating, "reads_secrets": t.secrets,
+                "sends_outbound": t.secrets, "policy_allows": t.policy_allows,
+                "confidence": t.confidence, "blast_radius": t.blast_radius}
         for field, cut in cuts.items():
             if _number(row.get(field)) and abs(float(row[field]) - cut) <= near:
                 near_counts[field] += 1
         inputs = _inputs(row)
         if inputs:
-            verdict, rule, _ = jev_policy.apply_policy(**inputs)
+            verdict, rule, _ = jev_policy.apply_policy(thresholds=t, **inputs)
             replayed += 1
             verdict_matches += verdict == row.get("verdict")
             rule_matches += rule == row.get("rule")
